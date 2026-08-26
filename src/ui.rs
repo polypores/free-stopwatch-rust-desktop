@@ -36,8 +36,40 @@ fn draw_normal(ctx: &egui::Context, app: &mut StopwatchApp) {
 
 fn draw_compact(ctx: &egui::Context, app: &mut StopwatchApp) {
     egui::CentralPanel::default()
-        .frame(egui::Frame::default().inner_margin(6.0))
+        // Start from the *real* central-panel frame for the current style
+        // (which fills in visuals.panel_fill) rather than
+        // Frame::default(), whose fill is transparent. With a transparent
+        // fill nothing paints over eframe's own default clear color (a
+        // near-black), which is invisible-on-invisible with light mode's
+        // dark text — exactly the "can't see anything" bug in Compact/
+        // floating mode.
+        .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(6.0))
         .show(ctx, |ui| {
+            // Compact mode removes the native window decorations, so there is
+            // no title bar to drag. Make the client area a native window drag
+            // region. The buttons below are added afterwards and keep their
+            // normal click behavior.
+            //
+            // This is the OS's own native drag (HTCAPTION-style on Windows),
+            // not a manual per-frame reposition. A manual approach was tried
+            // to dodge Windows' Snap Assist (see below), but it fights the
+            // desktop compositor's own move-smoothing: DWM doesn't treat a
+            // rapid stream of programmatic position commands as a live
+            // interactive move the way it does a native drag, so the window
+            // visibly blurred and lagged behind the mouse instead of
+            // tracking it 1:1. Native drag has neither problem. Snap Assist
+            // (drag near a screen edge/corner briefly inflates the window to
+            // a half/quarter of the screen) is instead corrected after the
+            // fact — see `StopwatchApp::enforce_compact_size`, called every
+            // frame in `update`, which snaps the size straight back the
+            // moment it notices Snap Assist has changed it.
+            let drag_id = ui.make_persistent_id("compact_window_drag");
+            let drag_response = ui.interact(ui.max_rect(), drag_id, egui::Sense::drag());
+
+            if drag_response.drag_started() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+
             ui.horizontal_centered(|ui| {
                 time_label(ui, app, 20.0);
                 ui.add_space(6.0);
@@ -96,23 +128,25 @@ fn control_buttons(ui: &mut egui::Ui, app: &mut StopwatchApp) {
     let available_width = ui.available_width();
     let row_height = button_size.y + (vertical_padding * 2.0);
 
+    // Only two buttons now: Start/Stop, and a second slot that doubles as
+    // Lap (while running) or Reset (while stopped) — see secondary_button.
     ui.allocate_ui_with_layout(
         egui::vec2(available_width, row_height),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.add_space(
                 (available_width
-                    - (button_size.x * 3.0 + button_spacing * 2.0))
+                    - (button_size.x * 2.0 + button_spacing))
                     .max(0.0)
                     / 2.0,
             );
 
             ui.spacing_mut().item_spacing.x = button_spacing;
 
-            let label = if app.stopwatch.is_running() { "Stop" } else { "Start" };
+            let running = app.stopwatch.is_running();
+            let label = if running { "⏸ Stop" } else { "▶ Start" };
             toggle_button(ui, app, label, button_size, label_font_size);
-            lap_button(ui, app, button_size, label_font_size);
-            reset_button(ui, app, button_size, label_font_size);
+            secondary_button(ui, app, button_size, label_font_size);
         },
     );
 }
@@ -141,31 +175,25 @@ fn toggle_button(
     }
 }
 
-fn lap_button(
+/// Second control-row button. It's a single slot that changes both its
+/// label/icon and its behavior depending on run state, rather than two
+/// buttons that swap enabled/disabled: while running it's "Lap" (record a
+/// split), and while stopped it's "Reset" (clear the stopwatch). This
+/// keeps the row at two buttons total instead of three.
+fn secondary_button(
     ui: &mut egui::Ui,
     app: &mut StopwatchApp,
     button_size: egui::Vec2,
     label_font_size: f32,
 ) {
-    let enabled = app.stopwatch.is_running();
-    let response = ui
-        .add_enabled_ui(enabled, |ui| {
-            styled_button(ui, "Lap", button_size, label_font_size)
-        })
-        .inner;
-    if response.clicked() {
-        app.stopwatch.lap();
-    }
-}
-
-fn reset_button(
-    ui: &mut egui::Ui,
-    app: &mut StopwatchApp,
-    button_size: egui::Vec2,
-    label_font_size: f32,
-) {
-    if styled_button(ui, "Reset", button_size, label_font_size).clicked() {
-        app.stopwatch.reset();
+    let running = app.stopwatch.is_running();
+    let label = if running { "⏱ Lap" } else { "↺ Reset" };
+    if styled_button(ui, label, button_size, label_font_size).clicked() {
+        if running {
+            app.stopwatch.lap();
+        } else {
+            app.stopwatch.reset();
+        }
     }
 }
 
