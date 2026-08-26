@@ -1,0 +1,20 @@
+cargo init <project-name> --lib        # Library crate (no main.rs)
+cargo init <project-name> --bin       # Binary application (default, has main.rs)
+cargo new <project-name>            # Same as cargo init --bin
+cargo init .
+
+
+cd /path/to/existing/project/
+cargo init .
+
+
+
+# Build the project
+cargo build
+
+# Run it (compiles first if needed)
+cargo run
+
+# Write code in src/main.rs or create additional modules:
+mkdir -p src/my_module
+touch src/my_module/mod.rs   # For module structure
