@@ -72,49 +72,99 @@ pub(crate) const BUTTON_SPACING: f32 = 12.0;
 pub(crate) const BUTTON_PADDING: egui::Vec2 = egui::vec2(12.0, 8.0);
 const LABEL_FONT_SIZE: f32 = 16.0;
 
+/// Size the control row from the actual content area. The width is the
+/// primary driver, while the height caps the scale so a very wide but short
+/// window cannot make the buttons too tall for the layout.
+fn button_scale(ui: &egui::Ui) -> f32 {
+    let available = ui.available_size();
+    let width_scale = available.x / 320.0;
+    let height_scale = available.y / 140.0;
 
-fn control_buttons(ui: &mut egui::Ui, app: &mut StopwatchApp) {
-    // Add outer padding around the whole control row
-    egui::Frame::none()
-        .inner_margin(egui::Margin::symmetric(BUTTON_PADDING.x, BUTTON_PADDING.y))
-        .show(ui, |ui| {
-            // Center the row horizontally within the available width
-            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = BUTTON_SPACING;
-
-                ui.horizontal(|ui| {
-                    let label = if app.stopwatch.is_running() { "Stop" } else { "Start" };
-                    toggle_button(ui, app, label);
-                    lap_button(ui, app);
-                    reset_button(ui, app);
-                });
-            });
-        });
+    width_scale.min(height_scale).clamp(1.0, 3.0)
 }
 
-fn styled_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+fn control_buttons(ui: &mut egui::Ui, app: &mut StopwatchApp) {
+    let scale = button_scale(ui);
+    let button_size = BUTTON_SIZE * scale;
+    let button_spacing = BUTTON_SPACING * scale;
+    let vertical_padding = BUTTON_PADDING.y * scale;
+    let label_font_size = LABEL_FONT_SIZE * scale;
+
+    // Reserve the full available width. This is important: a plain
+    // horizontal() only sizes itself to its contents, which makes the row
+    // appear stuck to the left when the window gets wider.
+    let available_width = ui.available_width();
+    let row_height = button_size.y + (vertical_padding * 2.0);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(available_width, row_height),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.add_space(
+                (available_width
+                    - (button_size.x * 3.0 + button_spacing * 2.0))
+                    .max(0.0)
+                    / 2.0,
+            );
+
+            ui.spacing_mut().item_spacing.x = button_spacing;
+
+            let label = if app.stopwatch.is_running() { "Stop" } else { "Start" };
+            toggle_button(ui, app, label, button_size, label_font_size);
+            lap_button(ui, app, button_size, label_font_size);
+            reset_button(ui, app, button_size, label_font_size);
+        },
+    );
+}
+
+fn styled_button(
+    ui: &mut egui::Ui,
+    text: &str,
+    button_size: egui::Vec2,
+    label_font_size: f32,
+) -> egui::Response {
     ui.add_sized(
-        BUTTON_SIZE,
-        egui::Button::new(egui::RichText::new(text).size(LABEL_FONT_SIZE)),
+        button_size,
+        egui::Button::new(egui::RichText::new(text).size(label_font_size)),
     )
 }
 
-fn toggle_button(ui: &mut egui::Ui, app: &mut StopwatchApp, label: &str) {
-    if styled_button(ui, label).clicked() {
+fn toggle_button(
+    ui: &mut egui::Ui,
+    app: &mut StopwatchApp,
+    label: &str,
+    button_size: egui::Vec2,
+    label_font_size: f32,
+) {
+    if styled_button(ui, label, button_size, label_font_size).clicked() {
         app.stopwatch.toggle();
     }
 }
 
-fn lap_button(ui: &mut egui::Ui, app: &mut StopwatchApp) {
+fn lap_button(
+    ui: &mut egui::Ui,
+    app: &mut StopwatchApp,
+    button_size: egui::Vec2,
+    label_font_size: f32,
+) {
     let enabled = app.stopwatch.is_running();
-    let response = ui.add_enabled_ui(enabled, |ui| styled_button(ui, "Lap")).inner;
+    let response = ui
+        .add_enabled_ui(enabled, |ui| {
+            styled_button(ui, "Lap", button_size, label_font_size)
+        })
+        .inner;
     if response.clicked() {
         app.stopwatch.lap();
     }
 }
 
-fn reset_button(ui: &mut egui::Ui, app: &mut StopwatchApp) {
-    if styled_button(ui, "Reset").clicked() {
+fn reset_button(
+    ui: &mut egui::Ui,
+    app: &mut StopwatchApp,
+    button_size: egui::Vec2,
+    label_font_size: f32,
+) {
+    if styled_button(ui, "Reset", button_size, label_font_size).clicked() {
         app.stopwatch.reset();
     }
 }
